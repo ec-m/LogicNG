@@ -18,6 +18,7 @@ import java.util.*;
  * @author
  * @version
  * @since
+ * References to where algorithms originate?
  */
 public final class Backbone {
 
@@ -38,6 +39,9 @@ public final class Backbone {
             case 1:
                 this.backbone = algorithm1();
                 break;
+            case 2:
+                this.backbone = algorithm2();
+                break;
             default:
                 System.out.println("No valid number for algorithm to use. Allowed: 1 - 7");
         }
@@ -51,7 +55,7 @@ public final class Backbone {
 
         /* Backbone estimate */
         SortedSet<Literal> bb = this.phi.literals();
-        for ( Literal l : this.phi.literals() ) {
+        for (Literal l : this.phi.literals()) {
             bb.add(l.negate());
         }
 
@@ -72,6 +76,36 @@ public final class Backbone {
             solver.add(bc);
         }
 
+        return bb;
+    }
+
+    /**
+     * Computes backbone with iterative algorithm.
+     * @return the backbone of the formula phi.
+     */
+    public SortedSet<Literal> algorithm2() {
+        /* Initialize backbone as empy set */
+        SortedSet<Literal> bb = new TreeSet<>();
+
+        SATSolver solver = MiniSat.miniSat(this.f);
+        solver.add(this.phi);
+
+        /* Check each literal whether it is in the backbone */
+        for (Literal l : this.phi.variables()) {
+            Tristate out1 = solver.sat(Arrays.asList(l));
+            Tristate out0 = solver.sat(Arrays.asList(l.negative()));
+            if (out1 == Tristate.FALSE & out0 == Tristate.FALSE) {
+                return Collections.emptySortedSet();
+            }
+            if (out1 == Tristate.FALSE) {
+                bb.add(l.negative());
+                solver.add(l.negative());
+            }
+            if (out0 == Tristate.FALSE) {
+                bb.add(l);
+                solver.add(l);
+            }
+        }
         return bb;
     }
 
