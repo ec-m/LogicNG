@@ -42,8 +42,11 @@ public final class Backbone {
             case 2:
                 this.backbone = algorithm2();
                 break;
+            case 3:
+                this.backbone = algorithm3();
+                break;
             default:
-                System.out.println("No valid number for algorithm to use. Allowed: 1 - 7");
+                throw new IllegalStateException("No valid number for algorithm to use. Allowed: 1 - 7");
         }
     }
 
@@ -106,6 +109,39 @@ public final class Backbone {
                 solver.add(l);
             }
         }
+        return bb;
+    }
+
+    /**
+     * Computes backbone with iterative algorithm (one test per variable).
+     * @return backbone of formula phi.
+     */
+    public SortedSet<Literal> algorithm3() {
+        /* Initialization */
+        SATSolver solver = MiniSat.miniSat(this.f);
+        solver.add(this.phi);
+        if(solver.sat() == Tristate.FALSE) {
+            return Collections.emptySortedSet();
+        }
+        SortedSet<Literal> lambda = solver.model().literals();
+        SortedSet<Literal> bb = new TreeSet<>();
+
+        while(!lambda.isEmpty()) {
+            Literal l = lambda.first();
+            Tristate out = solver.sat(Arrays.asList(l.negate()));
+            if(out == Tristate.FALSE) {
+                /* Backbone identified */
+                bb.add(l);
+                lambda.remove(l);
+                solver.add(l);
+            } else {
+                /* Refine set of literals still to be
+                 * tested using the model returned by SAT.
+                 */
+                lambda.retainAll(solver.model().literals());
+            }
+        }
+
         return bb;
     }
 
