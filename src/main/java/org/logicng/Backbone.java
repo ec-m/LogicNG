@@ -49,6 +49,9 @@ public final class Backbone {
             case 4:
                 this.backbone = algorithm4();
                 break;
+            case 5:
+                this.backbone = algorithm5(2); // ATTENTION: Rewrite so that chunk size can be entered by user.
+                break;
             default:
                 throw new IllegalStateException("No valid number for algorithm to use. Allowed: 1 - 7");
         }
@@ -178,6 +181,47 @@ public final class Backbone {
             bb.retainAll(solver.model().literals());
             /* Set back to state before disjunction was added to phi */
             solver.loadState(before);
+        }
+
+        return bb;
+    }
+
+    /**
+     * Computes backbone with chunking algorithm.
+     * @param chunksize size of literal-set to be tested in each iteration.
+     * @return backbone of formula phi.
+     */
+    public SortedSet<Literal> algorithm5(int chunksize) {
+        /* Initialization */
+        SATSolver solver = MiniSat.miniSat(this.f);
+        solver.add(this.phi);
+        if(solver.sat() == Tristate.FALSE) {
+            return Collections.emptySortedSet();
+        }
+        SortedSet<Literal> lambda = solver.model().literals();
+        SortedSet<Literal> bb = new TreeSet<>();
+
+        while(!lambda.isEmpty()) {
+            /* Pick chunk */
+            SolverState before = solver.saveState();
+            int k = Math.min(chunksize, lambda.size());
+            final Iterator<Literal> it = lambda.iterator();
+            Formula gamma = it.next().negate();
+            for(int i = 0; i < k - 1; i++) {
+                gamma = f.or(gamma, it.next().negate());
+            }
+            solver.add(gamma);
+            if(solver.sat() == Tristate.FALSE) {
+                /* All literals in chunk are backbones */
+                bb.addAll(gamma.negate().cnf().literals());
+                lambda.removeAll(gamma.negate().cnf().literals());
+                solver.loadState(before);
+                solver.add(gamma.negate().cnf());
+            } else {
+                /* Refine set of literals to be tested */
+                lambda.retainAll(solver.model().literals());
+                solver.loadState(before);
+            }
         }
 
         return bb;
