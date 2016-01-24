@@ -7,6 +7,7 @@ import org.logicng.formulas.FormulaFactory;
 import org.logicng.formulas.Literal;
 import org.logicng.solvers.MiniSat;
 import org.logicng.solvers.SATSolver;
+import org.logicng.solvers.SolverState;
 
 import java.util.*;
 
@@ -44,6 +45,9 @@ public final class Backbone {
                 break;
             case 3:
                 this.backbone = algorithm3();
+                break;
+            case 4:
+                this.backbone = algorithm4();
                 break;
             default:
                 throw new IllegalStateException("No valid number for algorithm to use. Allowed: 1 - 7");
@@ -95,8 +99,8 @@ public final class Backbone {
 
         /* Check each literal whether it is in the backbone */
         for (Literal l : this.phi.variables()) {
-            Tristate out1 = solver.sat(Arrays.asList(l));
-            Tristate out0 = solver.sat(Arrays.asList(l.negative()));
+            Tristate out1 = solver.sat(l);
+            Tristate out0 = solver.sat(l.negative());
             if (out1 == Tristate.FALSE & out0 == Tristate.FALSE) {
                 return Collections.emptySortedSet();
             }
@@ -128,7 +132,7 @@ public final class Backbone {
 
         while(!lambda.isEmpty()) {
             Literal l = lambda.first();
-            Tristate out = solver.sat(Arrays.asList(l.negate()));
+            Tristate out = solver.sat(l.negate());
             if(out == Tristate.FALSE) {
                 /* Backbone identified */
                 bb.add(l);
@@ -140,6 +144,40 @@ public final class Backbone {
                  */
                 lambda.retainAll(solver.model().literals());
             }
+        }
+
+        return bb;
+    }
+
+    /**
+     * Computes backbone with iterative algorithm 
+     * and complement of backbone estimate.
+     * @return backbone of formula phi.
+     */
+    public SortedSet<Literal> algorithm4() {
+        /* Initialization */
+        SATSolver solver = MiniSat.miniSat(this.f);
+        solver.add(this.phi);
+        solver.sat();
+        if(solver.sat() == Tristate.FALSE) {
+            return Collections.emptySortedSet();
+        }
+        SortedSet<Literal> bb = solver.model().literals();
+
+        while(!bb.isEmpty()) {
+            SolverState before = solver.saveState();
+            Formula tmp = bb.first().negate();
+            for (Literal l : bb) {
+                tmp = f.or(tmp, l.negate());
+            }
+            solver.add(tmp);
+            if(solver.sat() == Tristate.FALSE) {
+                return bb;
+            }
+            /* Refine backbone estimate */
+            bb.retainAll(solver.model().literals());
+            /* Set back to state before disjunction was added to phi */
+            solver.loadState(before);
         }
 
         return bb;
