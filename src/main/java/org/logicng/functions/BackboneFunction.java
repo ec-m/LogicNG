@@ -1,63 +1,92 @@
-package org.logicng;
+package org.logicng.functions;
 
 import org.logicng.datastructures.Assignment;
 import org.logicng.datastructures.Tristate;
 import org.logicng.formulas.Formula;
 import org.logicng.formulas.FormulaFactory;
+import org.logicng.formulas.FormulaFunction;
 import org.logicng.formulas.Literal;
 import org.logicng.solvers.MiniSat;
 import org.logicng.solvers.SATSolver;
 import org.logicng.solvers.SolverState;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
 import java.util.*;
 
 /**
- * Backbone.
+ * Computes the backbone of a given formula.
  * <p>
  * The backbone of a formula is the set of literals
  * that is true in all models of the formula.
- * @author
+ * @author Eva Charlotte Mayer
  * @version
  * @since
  * References to where algorithms originate?
  */
-public final class Backbone {
+public class BackboneFunction implements FormulaFunction<Collection<Literal>> {
+
+    public enum Algorithm {
+        ENUMERATION,
+        ITERATIVE_TWO_TESTS,
+        ITERATIVE_ONE_TEST,
+        ITERATIVE_COMPLEMENT,
+        CHUNKING
+    }
 
     private final FormulaFactory f;
     private final Formula phi;
-    private SortedSet<Literal> backbone;
+    Algorithm algorithm;
+    int chunkSize;
 
     /**
      * Constructor.
-     * @param f        the factory which created this instance
-     * @param phi      formula to compute backbone of
-     * @param algnum   number of algorithm to use for backbone computation (1 - 7)
+     * @param f           the factory which created this instance
+     * @param phi         formula to compute backbone of
+     * @param algorithm   number of algorithm to use for backbone computation
+     *                    Here only algorithms 1 - 4 allowed, since chunk size missing
      */
-    Backbone(final FormulaFactory f, final Formula phi, int algnum) {
+
+    /* Is phi even needed here as parameter? Or maybe only when calling "apply" */
+    BackboneFunction(final FormulaFactory f, final Formula phi, Algorithm algorithm) {
         this.f = f;
         this.phi = phi;
-        switch (algnum) {
-            case 1:
-                this.backbone = algorithm1();
-                break;
-            case 2:
-                this.backbone = algorithm2();
-                break;
-            case 3:
-                this.backbone = algorithm3();
-                break;
-            case 4:
-                this.backbone = algorithm4();
-                break;
-            case 5:
-                this.backbone = algorithm5(20); // ATTENTION: Rewrite so that chunk size can be entered by user.
-                break;
+        if (algorithm == Algorithm.CHUNKING)
+            throw new IllegalStateException("Chunk size missing.");
+        this.algorithm = algorithm;
+        this.chunkSize = -1;
+    }
+
+    /**
+     * Constructor for backbone computation with chunking algorithm.
+     * @param f           the factory which created this instance
+     * @param phi         formula to compute backbone of
+     * @param algorithm   number of algorithm to use for backbone computation
+     * @param chunkSize   size of chunks used for algorithm 5 as integer
+     * <p>
+     * Remark: If this constructor is called with a different algorithm than
+     *         the Chunking one, the chunkSize parameter is simply ignored.
+     */
+    BackboneFunction(final FormulaFactory f, final Formula phi, Algorithm algorithm, int chunkSize) {
+        this.f = f;
+        this.phi = phi;
+        this.algorithm = algorithm;
+        this.chunkSize = chunkSize;
+    }
+
+    @Override
+    public Collection<Literal> apply(final Formula formula, boolean cache) {
+        switch (this.algorithm) {
+            case ENUMERATION:
+                return algorithm1();
+            case ITERATIVE_TWO_TESTS:
+                return algorithm2();
+            case ITERATIVE_ONE_TEST:
+                return algorithm3();
+            case ITERATIVE_COMPLEMENT:
+                return algorithm4();
+            case CHUNKING:
+                return algorithm5(chunkSize);
             default:
-                throw new IllegalStateException("No valid number for algorithm to use. Allowed: 1 - 7");
+                throw new IllegalStateException("No valid number for algorithm to use. Allowed: 1 - 5");
         }
     }
 
@@ -66,10 +95,10 @@ public final class Backbone {
      * Computes backbone with enumeration-based algorithm.
      * @return the backbone of the formula phi.
      */
-    public SortedSet<Literal> algorithm1() {
+    public Collection<Literal> algorithm1() {
 
         /* Backbone estimate */
-        SortedSet<Literal> bb = this.phi.literals();
+        Collection<Literal> bb = this.phi.literals();
         for (Literal l : this.phi.literals()) {
             bb.add(l.negate());
         }
@@ -101,9 +130,9 @@ public final class Backbone {
      * Computes backbone with iterative algorithm.
      * @return the backbone of the formula phi.
      */
-    public SortedSet<Literal> algorithm2() {
+    public Collection<Literal> algorithm2() {
         /* Initialize backbone as empy set */
-        SortedSet<Literal> bb = new TreeSet<>();
+        Collection<Literal> bb = new TreeSet<>();
 
         SATSolver solver = MiniSat.miniSat(this.f);
         solver.add(this.phi);
@@ -131,7 +160,7 @@ public final class Backbone {
      * Computes backbone with iterative algorithm (one test per variable).
      * @return backbone of formula phi.
      */
-    public SortedSet<Literal> algorithm3() {
+    public Collection<Literal> algorithm3() {
         /* Initialization */
         SATSolver solver = MiniSat.miniSat(this.f);
         solver.add(this.phi);
@@ -139,7 +168,7 @@ public final class Backbone {
             return Collections.emptySortedSet();
         }
         SortedSet<Literal> lambda = solver.model().literals();
-        SortedSet<Literal> bb = new TreeSet<>();
+        Collection<Literal> bb = new TreeSet<>();
 
         while(!lambda.isEmpty()) {
             Literal l = lambda.first();
@@ -161,11 +190,11 @@ public final class Backbone {
     }
 
     /**
-     * Computes backbone with iterative algorithm 
+     * Computes backbone with iterative algorithm
      * and complement of backbone estimate.
      * @return backbone of formula phi.
      */
-    public SortedSet<Literal> algorithm4() {
+    public Collection<Literal> algorithm4() {
         /* Initialization */
         SATSolver solver = MiniSat.miniSat(this.f);
         solver.add(this.phi);
@@ -173,15 +202,15 @@ public final class Backbone {
         if(solver.sat() == Tristate.FALSE) {
             return Collections.emptySortedSet();
         }
-        SortedSet<Literal> bb = solver.model().literals();
+        Collection<Literal> bb = solver.model().literals();
 
         while(!bb.isEmpty()) {
             SolverState before = solver.saveState();
-            Formula tmp = bb.first().negate();
-            for (Literal l : bb) {
-                tmp = f.or(tmp, l.negate());
+            List<Formula> complement = new ArrayList<>();
+            for(Literal l : bb) {
+                complement.add(l.negate());
             }
-            solver.add(tmp);
+            solver.add(f.or(complement));
             if(solver.sat() == Tristate.FALSE) {
                 return bb;
             }
@@ -199,7 +228,7 @@ public final class Backbone {
      * @param chunksize size of literal-set to be tested in each iteration.
      * @return backbone of formula phi.
      */
-    public SortedSet<Literal> algorithm5(int chunksize) {
+    public Collection<Literal> algorithm5(int chunksize) {
         /* Initialization */
         SATSolver solver = MiniSat.miniSat(this.f);
         solver.add(this.phi);
@@ -207,7 +236,7 @@ public final class Backbone {
             return Collections.emptySortedSet();
         }
         SortedSet<Literal> lambda = solver.model().literals();
-        SortedSet<Literal> bb = new TreeSet<>();
+        Collection<Literal> bb = new TreeSet<>();
 
         while(!lambda.isEmpty()) {
             /* Pick chunk */
@@ -233,45 +262,5 @@ public final class Backbone {
         }
 
         return bb;
-    }
-
-    @Override
-    public String toString() {
-        return this.backbone.toString();
-    }
-
-    /**
-     * Reads formula from a DIMACS CNF file.
-     * @param file  File to be read from.
-     * @param ff    FormulaFactory for returned formula.
-     * @return      Formula object according to formula from file.
-     */
-    public static Formula readCNF(final File file, final FormulaFactory ff) throws IOException {
-        LinkedList<Formula> clauses = new LinkedList<>();
-        final BufferedReader reader = new BufferedReader(new FileReader(file));
-        while (reader.ready()) {
-            final String line = reader.readLine();
-            if (line.startsWith("p cnf"))
-                break;
-        }
-        String[] tokens;
-        final List<Literal> literals = new ArrayList<>();
-        while (reader.ready()) {
-            tokens = reader.readLine().split("\\s+");
-            if (tokens.length >= 2) {
-                assert "0".equals(tokens[tokens.length - 1]);
-                literals.clear();
-                for (int i = 0; i < tokens.length - 1; i++) {
-                    if (!tokens[i].isEmpty()) {
-                        int parsedLit = Integer.parseInt(tokens[i]);
-                        String var = "v" + Math.abs(parsedLit);
-                        literals.add(parsedLit > 0 ? ff.literal(var, true) : ff.literal(var, false));
-                    }
-                }
-                if (!literals.isEmpty())
-                    clauses.add(ff.or(literals));
-            }
-        }
-        return ff.and(clauses);
     }
 }
